@@ -1,0 +1,303 @@
+ 
+load "Element_P3" 
+real s0=clock();
+
+
+verbosity = 0;
+
+mesh th = readmesh("SqrSV_64.msh");
+ 
+
+
+fespace Vh2(th,P2);
+fespace Vh(th,P1dc);
+  
+//real[int]  normu(4);
+//real[int]  normw(4);
+real[int]  flucnormu(4);
+real[int]  flucnormw(4);
+
+real f1, f2, f3, f4;
+
+  
+
+Vh2  meanu1,meanu2,meanw1, meanw2;
+Vh2 u2,v2,un1,un2,w1,w2;
+Vh2 u1,v1, wn1, wn2; 
+Vh pp,qp,pm,qm;
+
+Vh2 [int] a(4),b(4),c(4),d(4);
+
+int nbiter = 400;
+real dt = 10.0/400.0;
+real ep = 1.0;
+real reynolds=1.0;
+real nu=1./reynolds;
+real num=1.0;  
+real mu=1.0; 
+
+
+real t;
+real time=0.0;
+
+
+  func fp1 = (1+num+num*t)*sin(y)+(1+t)*sin(x+y)-sin(x)*sin(y)-(1+t)^2*cos(x)*cos(y)+nu*cos(y)+t+1;
+  func fp2 = (1+num+num*t)*cos(x)-(1+t)*sin(x+y)+cos(x)*cos(y)+(1+t)^2*sin(x)*sin(y)+nu*sin(x)-t-1;
+  func fm1 = -sin(x)*sin(y)-(1+t)^2*cos(x)*cos(y)+nu*cos(y)-(1+num+num*t)*sin(y)-(1+t)*sin(x+y)+t+1;
+  func fm2 = cos(x)*cos(y)+(1+t)^2*sin(x)*sin(y)+nu*sin(x)-(1+num+num*t)*cos(x)+(1+t)*sin(x+y)-t-1;
+ 
+
+  func B01 = 0;
+  func B02 = 0;
+
+  func pres = (x-y)*(1+t);
+
+  func utrue1=cos(y)+(1+t)*sin(y);
+  func utrue2=sin(x)+(1+t)*cos(x);
+  func wtrue1=cos(y)-(1+t)*sin(y);
+  func wtrue2=sin(x)-(1+t)*cos(x);
+
+  func utrue1x=0;
+  func utrue1y=-sin(y)+(1+t)*cos(y);
+  func utrue2x=cos(x)-(1+t)*sin(x);
+  func utrue2y=0;
+
+  func wtrue1x=0;
+  func wtrue1y=-sin(y)-(1+t)*cos(y);
+  func wtrue2x=cos(x)+(1+t)*sin(x);
+  func wtrue2y=0;
+
+
+problem ElsasserStep1 ([u1,u2,pp],[v1,v2,qp],solver=UMFPACK) =
+
+    int2d(th)(
+     // 1/dt (u_h^{n+1},v_h^{n+1})  
+ 
+           1.0/dt * ( u1*v1 + u2*v2 )
+ 
+     // -(q^{n+1},div v_h^{n+1})   
+ 
+            - pp * ( dx(v1) + dy(v2) )
+ 
+     // (nu+num)/2.0*(grad u_h^{n+1},grad v_h^{n+1})  
+ 
+            + (nu+num)/2.0 *  ( dx(u1)*dx(v1) + dy(u1)*dy(v1) + dx(u2)*dx(v2) + dy(u2)*dy(v2) )
+
+     //+(<w>^n*grad u_h^{n+1},v_h^{n+1})  
+     +(v1 * (meanw1 * dx(u1) + meanw2 * dy(u1)) + v2 * (meanw1 * dx(u2) + meanw2 * dy(u2)))
+  
+      
+
+// +(2nu_T(w^{'n},t) grad v^{n+1},grad v^{n+1}) 
+
+  +2.0*mu*dt*((wn1-meanw1)*(wn1-meanw1)+(wn2-meanw2)*(wn2-meanw2))*
+    ( dx(u1)*dx(v1) + dy(u1)*dy(v1) + dx(u2)*dx(v2) + dy(u2)*dy(v2) )
+
+     // (div u_h^{n+1},q)  
+ 
+           + qp * (dx(u1) + dy(u2))
+     // eps(pp,qp)
+           + pp*qp*(0.0000000001)
+         )
+    + int2d(th)(
+     // -1/dt (u_h^n,v_h^{n+1}) 
+           -1.0 / dt * (un1 * v1 + un2*v2)
+
+	// (nu-num)/2.0*(grad u_h^n,grad v_h^{n+1})  
+
+           +(nu-num)/2.0*(dx(wn1)*dx(v1)+dy(wn1)*dy(v1)+dx(wn2)*dx(v2)+dy(wn2)*dy(v2))
+
+    // ((w_j^n-<w>^n).grad u_j^n,v^{n+1})  
+
+          + (v1 * ((wn1-meanw1) * dx(un1) + (wn2-meanw2) * dy(un1)) + v2 * ((wn1-meanw1) * dx(un2) + (wn2-meanw2) * dy(un2)))
+
+	// (fp,v) 
+	- (f1*v1 + f2*v2)
+
+              )
+  + on(1,2,3,4, u1 = utrue1, u2 = utrue2); 
+ 
+ 
+ 
+ 
+problem ElsasserStep2 ([w1,w2,pm],[v1,v2,qm],solver=UMFPACK) =
+
+    int2d(th)(
+     // 1/dt (w_h^{n+1},v_h^{n+1})  
+ 
+           1.0/dt * ( w1*v1 + w2*v2 )
+ 
+     // -(r_h^{n+1},div v_h^{n+1}) 
+ 
+            - pm * ( dx(v1) + dy(v2) )
+ 
+     // +(nu+num)/2.0*(grad w_h^{n+1},grad v_h^{n+1}) 
+ 
+            + (nu+num)/2.0 *  ( dx(w1)*dx(v1) + dy(w1)*dy(v1) + dx(w2)*dx(v2) + dy(w2)*dy(v2) )
+ 
+ //+(<v>^n*grad w_h^{n+1},v_h^{n+1})  
+     +(v1 * (meanu1 * dx(w1) + meanu2 * dy(w1)) + v2 * (meanu1 * dx(w2) + meanu2 * dy(w2)))
+
+
+// +(2nu_T(v^{'n},t) grad w^{n+1},grad v^{n+1}) 
+
+  +2.0*mu*dt*((un1-meanu1)*(un1-meanu1)+(un2-meanu2)*(un2-meanu2))*
+ ( dx(w1)*dx(v1) + dy(w1)*dy(v1) + dx(w2)*dx(v2) + dy(w2)*dy(v2) )
+     
+ 
+ 
+     // (div w_h^{n+1},r)  
+ 
+           + qm * (dx(w1) + dy(w2))
+     // eps(pm,qm)
+           + pm*qm*(0.0000000001)
+         )
+    + int2d(th)(
+     // -1/dt (w_h^n,v_h^{n+1}) 
+
+           -1.0 / dt * (wn1 * v1 + wn2*v2)
+
+    // +(nu-num)/2.0*(grad u_h^n,grad v_h^{n+1})  
+
+           +(nu-num)/2.0*(dx(un1)*dx(v1)+dy(un1)*dy(v1)+ dx(un2)*dx(v2)+dy(un2)*dy(v2))
+
+
+   // ((u_j^n-<u>^n).grad w_j^n,v^{n+1})  
+
+       + (v1 * ((un1-meanu1) * dx(wn1) + (un2-meanu2) * dy(wn1)) + v2 * ((un1-meanu1) * dx(wn2) + (un2-meanu2) * dy(wn2)))
+
+
+	// (f2,v_h^{n+1}) 
+	- (f3*v1 + f4*v2)
+            )
+  + on(1,2,3,4, w1 = wtrue1, w2 = wtrue2);
+
+
+   // Initializing at time t=0.0
+t=0;
+
+a[0] = utrue1;
+a[1] = utrue1;
+a[2] = utrue1;
+a[3] = utrue1; 
+
+b[0] = utrue2;
+b[1] = utrue2;
+b[2] = utrue2;
+b[3] = utrue2; 
+
+
+pp = 0;
+pm = 0;
+
+c[0] = wtrue1;
+c[1] = wtrue1;
+c[2] = wtrue1;
+c[3] = wtrue1; 
+
+d[0] = wtrue2;
+d[1] = wtrue2;
+d[2] = wtrue2;
+d[3] = wtrue2; 
+
+for (int j=0;j<4;j++){
+  flucnormu(j) = 0.0;
+  flucnormw(j) = 0.0;
+}
+
+//ofstream data1("u_vectornorm.dat") ;
+//ofstream data2("w_vectornorm.dat") ;
+ofstream mydata1("norm_fluc_u_new.dat");
+ofstream mydata2("norm_fluc_v_new.dat");
+
+meanu1 = utrue1;
+meanu2 = utrue2;
+meanw1 = wtrue1;
+meanw2 = wtrue2;
+
+ 
+int iter;
+for ( iter = 1; iter <= nbiter; iter++) {
+
+      t = dt*iter;
+      time = t;
+
+      cout<< "***********************************************************************"<<endl;
+      cout<< "Timestep = " << iter <<" Time = "<<t<< endl ;
+      cout<< "***********************************************************************"<<endl;
+      
+     
+           
+     
+      for (int j = 0; j<4; j++){      
+
+         un1 = a[j];
+         un2 = b[j];     
+         wn1 = c[j];
+         wn2 = d[j];
+
+         if( j==0 ){
+            f1 = (1.0+ep)*fp1;
+            f2 = (1.0+ep)*fp2;
+            f3 = (1.0+ep)*fm1;
+            f4 = (1.0+ep)*fm2;
+          }
+          else if( j ==1 ){
+            f1 = (1.0-ep)*fp1;
+            f2 = (1.0-ep)*fp2;
+            f3 = (1.0-ep)*fm1;
+            f4 = (1.0-ep)*fm2;
+          }
+          else if( j == 2 ){
+            f1 = (1.0+2.0*ep)*fp1;
+            f2 = (1.0+2.0*ep)*fp2;
+            f3 = (1.0+2.0*ep)*fm1;
+            f4 = (1.0+2.0*ep)*fm2;
+          }
+          else {
+            f1 = (1.0-2.0*ep)*fp1;
+            f2 = (1.0-2.0*ep)*fp2;
+            f3 = (1.0-2.0*ep)*fm1;
+            f4 = (1.0-2.0*ep)*fm2;
+          }
+         ElsasserStep1;
+         ElsasserStep2;
+      
+         a[j] = u1;
+         b[j] = u2;
+         c[j] = w1;
+         d[j] = w2;
+      }
+
+      meanu1 = 0.0;
+      meanu2 = 0.0;
+      meanw1 = 0.0;
+      meanw2 = 0.0;
+
+      for (int j=0;j<4;j++){
+
+       meanu1 = meanu1+a[j]/4.0;
+       meanu2 = meanu2+b[j]/4.0;
+       meanw1 = meanw1+c[j]/4.0;
+       meanw2 = meanw2+d[j]/4.0;
+
+     }
+
+     for ( int j = 0; j < 4; j++){
+  
+      flucnormu(j) =  sqrt(int2d(th)((dx(meanu1) - dx(a[j]))*(dx(meanu1) - dx(a[j])) + (dy(meanu2) - dy(b[j]))*(dy(meanu2) - dy(b[j])) ));     
+      flucnormw(j) =  sqrt(int2d(th)((dx(meanw1) - dx(c[j]))*(dx(meanw1) - dx(c[j])) + (dy(meanw2) - dy(d[j]))*(dy(meanw2) - dy(d[j])) ));
+
+     }
+      
+    mydata1<<t<<"     "<<flucnormu(0)<<"    "<<flucnormu(1)<<"    "<<flucnormu(2)<<"    "<<flucnormu(3)<<endl;
+    mydata2<<t<<"     "<<flucnormw(0)<<"    "<<flucnormw(1)<<"    "<<flucnormw(2)<<"    "<<flucnormw(3)<<endl;
+
+           
+    
+ }
+     
+
+  
+
+
